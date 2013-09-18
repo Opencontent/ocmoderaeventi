@@ -6,13 +6,14 @@ class updateObjectStateType extends eZWorkflowEventType {
 
 	public function __construct()
     {
-		$this->eZWorkflowEventType( self::TYPE_ID, 'Update Object State' );
+		$this->eZWorkflowEventType( self::TYPE_ID, 'Moderazione e ricollocazione eventi' );
 	}
 
 	public function execute( $process, $event )
     {
 		$processParams = $process->attribute( 'parameter_list' );
 		//eZDebug::writeNotice( var_export( $processParams, 1 ), "PROCESS PARAMS" );
+        
 		$trigger = $processParams['trigger_name'];;
 		if( $trigger == 'post_updateobjectstate' )
 		{
@@ -20,33 +21,32 @@ class updateObjectStateType extends eZWorkflowEventType {
 			$contentObject = eZContentObject::fetch( $objectID );
 			if( $contentObject instanceof eZContentObject )
 			{
-				$classIdentifiers = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ClassIdentifiers' ) );
+				$classIdentifiers = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ClassIdentifiers' );
 				$classIdentifier = $contentObject->contentClassIdentifier();
 				if( in_array( $classIdentifier, $classIdentifiers ) )
 				{
-					$target = eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'StatoPubblicato' );
+					$approvato = eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'StatoPubblicato' );
 					$daModerare = eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'StatoDaModerareID' );
 					$aNewState = $processParams['state_id_list']; // array
 					$aNewState = $aNewState[0];
-					
-					$moderatorGroups = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ModeratorGroupID' ) );
+
+					$moderatorGroups = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ModeratorGroupID' );
 					$creator = $contentObject->attribute( 'owner_id' );
 					// stabilisci se è un moderatore: ti servirà più volte questa informazione
-					$userContentObject = eZContentObject::fetch( $creator );
-					if( $userContentObject instanceof eZContentObject )
+					$userObject = eZUser::fetch( $creator );
+					if( $userObject instanceof eZUser )
 					{
 						$isModerator = false;
-						$userGroups = $userContentObject->assignedNodes();
+						$userGroups = $userObject->groups( false );
 						foreach( $userGroups as $group )
-						{
-							$groupID = $group->attribute( 'parent_node_id' );
-							if( in_array( $groupID, $moderatorGroups ) )
-							{
-								$isModerator = true;
-								break;
-							}
-						}
-					}
+                        {								
+                            if( in_array( $group, $moderatorGroups ) )
+                            {
+                                $isModerator = true;
+                                break;
+                            }
+                        }
+					}                    
 					
 					// ora verifica lo Stato dell'evento: è da moderare o è stato moderato
 					if( $aNewState == $daModerare ) // un evento messo in "da moderare". Avvisa il creatore.
@@ -60,7 +60,7 @@ class updateObjectStateType extends eZWorkflowEventType {
 							$user = eZUser::fetch( $creator );
 							if( $user instanceof eZUser )
 							{
-								$robots = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'RobotsUserName' ) );
+								$robots = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'RobotsUserName' );
 								if( !in_array( $user->Login, $robots ) )
 								{
 									//updateObjectStateType::sendMail( $user->Email, $contentObject->attribute( 'id' ), 'da_moderare' );
@@ -80,9 +80,8 @@ class updateObjectStateType extends eZWorkflowEventType {
 										$tpl->resetVariables();
 								
 										// variabili che vuoi a diposizione nel template
-										$tpl->setVariable( 'hostname', $hostname );
-										$tpl->setVariable( 'node_id', $contentObject->mainNodeID() );
-										$tpl->setVariable( 'event_name', $contentObject->Name );
+										$tpl->setVariable( 'hostname', $hostname );										
+										$tpl->setVariable( 'event', $contentObject->attribute( 'main_node' ) );
 										$tpl->setVariable( 'email_receiver', $to );
 										
 										if( $type == 'approvato' )
@@ -96,7 +95,7 @@ class updateObjectStateType extends eZWorkflowEventType {
 											$tpl->setVariable( 'approvato', false );
 										}
 								
-										$templateResult = $tpl->fetch( 'design:mail_event_update_state.tpl' );
+										$templateResult = $tpl->fetch( 'design:mail/event_update_state.tpl' );
 								
 										if ( $tpl->hasVariable( 'content_type' ) )
 											$mail->setContentType( $tpl->variable( 'content_type' ) );
@@ -141,9 +140,9 @@ class updateObjectStateType extends eZWorkflowEventType {
 						}
 					}
 					// altrimenti è un evento da moderato a pubblicato? e da chi è stato pubblicato?
-					elseif( in_array( $target, $processParams['state_id_list'] ) )
+					elseif( in_array( $approvato, $processParams['state_id_list'] ) )
 					{
-						/*
+                        /*
 						 * 1) notifica l'autore dell'evento
 						 * (se non è moderatore né un robot)
 						 * che il suo oggetto è stato pubblicato
@@ -154,10 +153,10 @@ class updateObjectStateType extends eZWorkflowEventType {
 							$user = eZUser::fetch( $creator );
 							if( $user instanceof eZUser )
 							{
-								$robots = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'RobotsUserName' ) );
+								$robots = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'RobotsUserName' );
 								if(  !in_array( $user->Login, $robots ) )
 								{
-									//updateObjectStateType::sendMail( $user->Email, $contentObject->attribute( 'id' ), 'approvato' );
+                                    //updateObjectStateType::sendMail( $user->Email, $contentObject->attribute( 'id' ), 'approvato' );
 									{
 										$to = $user->Email;
 										$type = 'approvato';
@@ -174,9 +173,8 @@ class updateObjectStateType extends eZWorkflowEventType {
 										$tpl->resetVariables();
 								
 										// variabili che vuoi a diposizione nel template
-										$tpl->setVariable( 'hostname', $hostname );
-										$tpl->setVariable( 'node_id', $contentObject->mainNodeID() );
-										$tpl->setVariable( 'event_name', $contentObject->Name );
+										$tpl->setVariable( 'hostname', $hostname );										
+										$tpl->setVariable( 'event', $contentObject->attribute( 'main_node' ) );
 										$tpl->setVariable( 'email_receiver', $to );
 										
 										if( $type == 'approvato' )
@@ -190,7 +188,7 @@ class updateObjectStateType extends eZWorkflowEventType {
 											$tpl->setVariable( 'approvato', false );
 										}
 								
-										$templateResult = $tpl->fetch( 'design:mail_event_update_state.tpl' );
+										$templateResult = $tpl->fetch( 'design:mail/event_update_state.tpl' );
 								
 										if ( $tpl->hasVariable( 'content_type' ) )
 											$mail->setContentType( $tpl->variable( 'content_type' ) );
@@ -237,20 +235,23 @@ class updateObjectStateType extends eZWorkflowEventType {
 						// 2) Colloca l'evento in tutti i calendari previsiti
 						// considera solo il main node ID
 						$mainParentNodeID = $contentObject->mainParentNodeID();
-						$alwaysAddLocations = explode(',', eZINI::instance( 'ocmoderaeventi.ini' )->variable( 'Calendars', 'Always' ) );
+						$alwaysAddLocations = (array) eZINI::instance( 'ocmoderaeventi.ini' )->variable( 'Locations', 'Always' ); 
 						foreach( $alwaysAddLocations as $collocation )
-						{
-							// richiedi ogni volta la lista dei nodi: evita così i duplicati
+						{							
+                            // richiedi ogni volta la lista dei nodi: evita così i duplicati
 							// anche se è poco performante
 							$nodeList = $contentObject->parentNodeIDArray();
 							if( !in_array( $collocation, $nodeList ) )
 							{
-								$contentObject->addLocation( $collocation );
+								//$contentObject->addLocation( $collocation );
+                                eZContentOperationCollection::addAssignment( $contentObject->attribute( 'main_node_id' ),
+                                                                             $contentObject->attribute( 'id' ),
+                                                                             array( $collocation ) );
 								//eZDebug::writeNotice( "Pubblico anche in $collocation ", "ALWAYS" );
 							}
 						}
 						
-						$locations = eZINI::instance( 'ocmoderaeventi.ini' )->variable( 'Calendars', 'FromTo' );
+						$locations = eZINI::instance( 'ocmoderaeventi.ini' )->variable( 'Locations', 'FromTo' );
 						
 						foreach( $locations as $location )
 						{
@@ -258,18 +259,21 @@ class updateObjectStateType extends eZWorkflowEventType {
 							//if( in_array( $from, $nodeList ) )
 							if( $from == $mainParentNodeID )
 							{
-								$newLocations = explode( ',', $to );
-								foreach( $newLocations as $parentNodeID )
-								{
-									// richiedi ogni volta la lista dei nodi: evita così i duplicati
-									// anche e poco performante
-									$nodeList = $contentObject->parentNodeIDArray();
-									if( !in_array( $parentNodeID, $nodeList ) ) // se è già collocato anche qui, non duplicare la collocazione
-									{
-										//eZDebug::writeNotice( "Pubblico anche in $parentNodeID ", "NODI" );
-										$contentObject->addLocation( $parentNodeID );
-									}
-								}
+								$newLocations = explode( ',', $to );                                
+                                eZContentOperationCollection::addAssignment( $contentObject->attribute( 'main_node_id' ),
+                                                                             $contentObject->attribute( 'id' ),
+                                                                             array( $newLocations ) );
+								//foreach( $newLocations as $parentNodeID )
+								//{
+								//	// richiedi ogni volta la lista dei nodi: evita così i duplicati
+								//	// anche e poco performante
+								//	$nodeList = $contentObject->parentNodeIDArray();
+								//	if( !in_array( $parentNodeID, $nodeList ) ) // se è già collocato anche qui, non duplicare la collocazione
+								//	{
+								//		//eZDebug::writeNotice( "Pubblico anche in $parentNodeID ", "NODI" );
+								//		$contentObject->addLocation( $parentNodeID );
+								//	}
+								//}
 							}
 						}
 						

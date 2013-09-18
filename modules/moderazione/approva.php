@@ -3,8 +3,6 @@
 $module = $Params['Module'];
 $contentObjectID = $Params['id'];
 
-// eZDebug::writeDebug( var_export( $Params, 1 ), __METHOD__ );
-
 $contentObject = eZContentObject::fetch( $contentObjectID );
 if( !$contentObject instanceof eZContentObject )
 {

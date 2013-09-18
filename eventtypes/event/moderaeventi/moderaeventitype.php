@@ -19,84 +19,85 @@ class moderaEventiType extends eZWorkflowEventType {
 			$contentObject = eZContentObject::fetch( $objectID );
 			if( $contentObject instanceof eZContentObject )
 			{
-				if( $contentObject->attribute( 'current_version' ) == 1 )
+				// considero solo la prima versione
+                if( $contentObject->attribute( 'current_version' ) == 1 )
 				{
-					$classIdentifiers = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ClassIdentifiers' ) );
-					$moderatorGroups = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ModeratorGroupID' ) );
+					$classIdentifiers = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ClassIdentifiers' );
+					$moderatorGroups = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'ModeratorGroupID' );
+					$whiteListGroups = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'WhiteListGroupID' );
 					$classIdentifier = $contentObject->contentClassIdentifier();
+                    
+                    // considero solo le classi degli ini
 					if( in_array( $classIdentifier, $classIdentifiers ) )
 					{
 						$ownerID = $contentObject->attribute( 'owner_id' );
-						$userContentObject = eZContentObject::fetch( $ownerID );
-						if( $userContentObject instanceof eZContentObject )
+                        $userObject = eZUser::fetch( $ownerID );						
+						if( $userObject instanceof eZUser )
 						{
 							$isModerator = false;
-							$userGroups = $userContentObject->assignedNodes();
+                            $inWhiteList = false;
+							$userGroups = $userObject->groups( false );
 							foreach( $userGroups as $group )
-							{
-								$groupID = $group->attribute( 'parent_node_id' );
-								if( in_array( $groupID, $moderatorGroups ) )
+							{								
+								if( in_array( $group, $moderatorGroups ) )
 								{
 									$isModerator = true;
 									break;
 								}
 							}
-							// se NON è un moderatore, assegna uno stato
-							if( $isModerator == false )
+                            
+                            foreach( $userGroups as $group )
+							{								
+								if( in_array( $group, $whiteListGroups ) )
+								{
+									$inWhiteList = true;
+									break;
+								}
+							}
+                            
+                            
+							// se NON è un moderatore o NON è in whitelist, assegna lo stato da approvare
+							if( $isModerator == false && $inWhiteList == false )
 							{
-								$approvato = eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'StatoDaModerareID' );
-								$approvato = (int) $approvato;
+								$daModerare = (int) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'StatoDaModerareID' );								
 								
 								if ( eZOperationHandler::operationIsAvailable( 'content_updateobjectstate' ) )
 								{
 									$operationResult = eZOperationHandler::execute( 'content', 'updateobjectstate',
 																					array( 'object_id'     => $objectID,
-																						   'state_id_list' => array ( $approvato ) ) );
+																						   'state_id_list' => array ( $daModerare ) ) );
 								}
 								else
 								{
-									eZContentOperationCollection::updateObjectState( $objectID, array( $approvato ) );
+									eZContentOperationCollection::updateObjectState( $objectID, array( $daModerare ) );
 								}
 								//eZDebug::writeDebug( "Assegnato lo stato Da Moderare", __METHOD__ );
-								$mailRecipient = array();
-								$robots = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'RobotsUserName' ) );
-								// al cambio di stato viene inviata una mail allo user.
-								// non inviarla qui
 								
-								/*
-								$user = eZUser::fetch( $ownerID );
-								if( $user instanceof eZUser )
-								{
-									$robots = explode( ',', eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'RobotsUserName' ) );
-									if( !in_array( $user->Login, $robots ) )
-									{
-										moderaEventiType::sendMail( $user->Email, $contentObject->attribute( 'id' ) );
-									}
-								}
-								*/
-								/*
-								 * manda una mail a tutto il gruppo moderatori
-								 * avvisali che un evento è in moderazione
-								 * non mandare mail ai robots
-								 */
+                                $mailRecipient = array();
+								$robots = (array) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'RobotsUserName' );
 								
-								$params = array ( 'ClassFilterType' => 'include',
-												  'ClassFilterArray' => array( 'user' ) );
+                                // al cambio di stato viene inviata una mail a tutti i moderatori								
 								foreach( $moderatorGroups as $group )
 								{
-									$nodeList = eZContentObjectTreeNode::subTreeByNodeId($params, $group );
-									foreach( $nodeList as $node )
-									{
-										$obj = $node->object();
-										$user = eZUser::fetch( $obj->attribute( 'id' ) );
-										if( $user instanceof eZUser )
-										{
-											if( !in_array( $user->Login, $robots ) )
-											{
-												array_push( $mailRecipient, $user->Email );
-											}
-										}
-									}
+									$groupObject = eZContentObject::fetch( $group );
+                                    if ( $groupObject instanceof eZContentObject )
+                                    {
+                                        foreach( $groupObject->attribute( 'assigned_nodes' ) as $userNode )
+                                        {
+                                            $userNodeList = $userNode->attribute( 'subtree' );
+                                            foreach( $userNodeList as $node )
+                                            {                                                                                                
+                                                $user = eZUser::fetch( $node->attribute( 'contentobject_id' ) );
+                                                if( $user instanceof eZUser )
+                                                {
+                                                    if( !in_array( $user->Login, $robots ) )
+                                                    {
+                                                        $mailRecipient[] = $user->Email;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
 								}
 								
 								array_unique( $mailRecipient );
@@ -104,7 +105,10 @@ class moderaEventiType extends eZWorkflowEventType {
 								{
 									//eZDebug::writeDebug( "Invio mail a " . $to . " che è nel gruppo moderatori",  "Inviata mail" );
 									//moderaEventiType::sendMail( $to, $contentObject->attribute( 'id' ) );
-									{
+									
+                                    // invio mail ai moderatori
+                                    if ( eZMail::validate( $to ) )
+                                    {
 										$contentObjectID = (int) $contentObject->attribute( 'id' );
 										$ini = eZINI::instance();
 										$tpl = eZTemplate::factory();
@@ -121,13 +125,12 @@ class moderaEventiType extends eZWorkflowEventType {
 										$tpl->resetVariables();
 								
 										// variabili che vuoi a diposizione nel template
-										$tpl->setVariable( 'hostname', $hostname );
-										$tpl->setVariable( 'node_id', $contentObject->mainNodeID() );
-										$tpl->setVariable( 'event_name', $contentObject->Name );
+										$tpl->setVariable( 'hostname', $hostname );										
+										$tpl->setVariable( 'event', $contentObject->attribute( 'main_node' ) );
 										$tpl->setVariable( 'email_receiver', $to );
 								
 										// il tuo template
-										$templateResult = $tpl->fetch( 'design:mail_modera_eventi.tpl' );
+										$templateResult = $tpl->fetch( 'design:mail/modera_eventi.tpl' );
 								
 										if ( $tpl->hasVariable( 'content_type' ) )
 											$mail->setContentType( $tpl->variable( 'content_type' ) );
@@ -169,12 +172,7 @@ class moderaEventiType extends eZWorkflowEventType {
 										$mailResult = eZMailTransport::send( $mail );
 									}
 								}
-							}
-							else
-							{
-								//eZDebug::writeDebug( "Sono un moderatore, quindi non assegno alcuno stato", __METHOD__ );
-							}
-							
+							}							
 						}
 					}
 				}
