@@ -18,8 +18,7 @@ else
         $redirectURI = $http->variable( 'RedirectURI' );
     }
     
-    $approvato = eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'StatoPubblicato');
-    $approvato = (int) $approvato;
+    $approvato = (int) eZINI::instance( 'ocmoderaeventi.ini')->variable( 'Events', 'StatoPubblicato');    
     
     if ( eZOperationHandler::operationIsAvailable( 'content_updateobjectstate' ) )
     {
