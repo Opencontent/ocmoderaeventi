@@ -5,6 +5,8 @@
 
 {def $counter = fetch( 'content', 'tree_count', hash( 'parent_node_id', $root_node_id,
                     'main_node_only', true(),
+                    'class_filter_type', include,
+                    'class_filter_array', ezini( 'Events', 'ClassIdentifiers', 'ocmoderaeventi.ini' ),
                     'attribute_filter', array( 'and', array( 'state', "=", $stato_id ) ) ) )}
                  
 {if $counter|gt(0)}
@@ -23,6 +25,8 @@
     </tr>
     {foreach fetch( 'content', 'tree', hash( 'parent_node_id', $root_node_id,
                     'main_node_only', true(),
+                    'class_filter_type', include,
+                    'class_filter_array', ezini( 'Events', 'ClassIdentifiers', 'ocmoderaeventi.ini' ),
                     'sort_by', array( 'published', false() ),
                     'attribute_filter', array( 'and', array( 'state', "=", $stato_id ) ) )
                            ) as $event sequence array( 'bglight', 'bgdark' ) as $style}
@@ -65,7 +69,8 @@
 </table>
 </div>
 {else}
-
+<div class="warning message-warning">
 <h4>Non ci sono eventi in attesa di moderazione.</h4>
+</div>
 
 {/if}

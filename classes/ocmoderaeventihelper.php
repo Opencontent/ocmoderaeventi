@@ -332,6 +332,12 @@ class OCModeraEventiHelper
     
     public function addLocations()
     {
+        //if ( $this->currentObject->attribute( 'current_version' ) > 1 )
+        //{
+        //    eZDebug::writeNotice( "La versione dell'oggetto è superiore alla 1, non vengono aggiunte collocazioni", __METHOD__ );
+        //    return false;
+        //}
+
         $this->sudo();
         $mainParentNodeID = $this->currentObject->mainParentNodeID();        
         if( !empty( $this->alwaysAddLocations ) )
@@ -339,7 +345,19 @@ class OCModeraEventiHelper
             $addLocations = array();
             foreach( $this->alwaysAddLocations as $new )
             {
-                if ( eZContentObjectTreeNode::fetch( $new, false ) )
+                $nodeExists = eZContentObjectTreeNode::fetch( $new, false );
+                $missingLocation = true;
+                
+                foreach( $assignedNodes as $assignedNode )
+                {
+                    if ( $assignedNode['parent_node_id'] == $new )
+                    {
+                        $missingLocation = false;
+                        break;
+                    }
+                }
+                
+                if ( $nodeExists && $missingLocation )
                 {
                     $addLocations[] = $new;
                 }
@@ -351,6 +369,8 @@ class OCModeraEventiHelper
                                                              $addLocations );
             }
         }
+        
+        $assignedNodes = $this->currentObject->assignedNodes( false );
         foreach( $this->addLocations as $location )
         {
             list( $from, $to ) = explode( ';', $location );							
@@ -360,7 +380,18 @@ class OCModeraEventiHelper
                 $addLocations = array();
                 foreach( $newLocations as $new )
                 {
-                    if ( eZContentObjectTreeNode::fetch( $new, false ) )
+                    $nodeExists = eZContentObjectTreeNode::fetch( $new, false );
+                    $missingLocation = true;
+                    
+                    foreach( $assignedNodes as $assignedNode )
+                    {
+                        if ( $assignedNode['parent_node_id'] == $new )
+                        {
+                            $missingLocation = false;
+                            break;
+                        }
+                    }
+                    if ( $nodeExists && $missingLocation )
                     {
                         $addLocations[] = $new;
                     }
